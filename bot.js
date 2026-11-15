@@ -4,6 +4,7 @@ const path = require('path');
 const statePath = path.join(__dirname, 'state.json');
 let state = {
   lastScanTime: '',
+  lastZaloResponse: null,
   knownContacts: {},
   sentLocks: {}
 };
@@ -13,6 +14,7 @@ if (fs.existsSync(statePath)) {
     const loaded = JSON.parse(fs.readFileSync(statePath, 'utf8'));
     state = {
       lastScanTime: loaded.lastScanTime || '',
+      lastZaloResponse: loaded.lastZaloResponse || null,
       knownContacts: loaded.knownContacts || {},
       sentLocks: loaded.sentLocks || {}
     };
@@ -26,7 +28,7 @@ const TARGET_USER = (process.env.TARGET_USER || '').trim();
 const CUSTOM_MSG = (process.env.CUSTOM_MSG || '').trim();
 
 // =========================================================================
-// 1. DANH BẠ NGƯỜI NHẬN (Đặt tên gợi nhớ : "Mã Chat ID lấy từ state.json")
+// 1. DANH BẠ NGƯỜI NHẬN (Đặt tên gợi nhớ : "Mã Chat ID")
 // =========================================================================
 const CONTACTS = {
   "nguoi_rieng_1": "DIEN_CHAT_ID_VAO_DAY",
@@ -35,7 +37,6 @@ const CONTACTS = {
 
 // =========================================================================
 // 2. KỊCH BẢN HẸN GIỜ TỰ ĐỘNG (Đổi enabled: true để bật, false để tắt)
-// Lưu ý: Nội dung tin nhắn đặt trong cặp dấu nháy chéo `...` để xuống dòng thoải mái
 // =========================================================================
 const TASKS = [
   {
@@ -58,39 +59,6 @@ const TASKS = [
     hour: 8,
     messages: [
       `Hôm nay ngày 10 rồi, nhớ kiểm tra công việc định kỳ tháng này nhé!`
-    ]
-  },
-  {
-    id: "nhac_mung_1_va_ram",
-    enabled: false,
-    to: "ban_than",
-    type: "lunar",
-    lunarDays: [1, 15],
-    hour: 6,
-    messages: [
-      `Hôm nay là ngày tuần (Mùng 1 / Rằm Âm lịch) nhé!`
-    ]
-  },
-  {
-    id: "nhac_cuoi_tuan",
-    enabled: false,
-    to: "nguoi_rieng_1",
-    type: "weekly",
-    daysOfWeek: [6],
-    hour: 9,
-    messages: [
-      `Cuối tuần thư giãn và nghỉ ngơi vui vẻ nhé!`
-    ]
-  },
-  {
-    id: "ngay_ky_niem_sinh_nhat",
-    enabled: false,
-    to: "nguoi_rieng_1",
-    type: "yearly",
-    dateMonth: "20/10",
-    hour: 7,
-    messages: [
-      `Chúc ngày 20/10 thật nhiều niềm vui và hạnh phúc!`
     ]
   }
 ];
@@ -146,9 +114,9 @@ async function sendZalo(chatId, text) {
   }
 }
 
-async function fetchOneUpdate() {
+async function fetchOneUpdate(timeoutMs) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 5000);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetch(`https://bot-api.zapps.me/bot${BOT_TOKEN}/getUpdates`, {
       method: 'POST',
@@ -164,17 +132,24 @@ async function fetchOneUpdate() {
   }
 }
 
-async function scanContacts() {
-  console.log("🔍 Đang quét tin nhắn mới từ Zalo Bot...");
-  let foundNew = false;
+// Mở cổng lắng nghe 90 giây khi ở chế độ scan_id, bắt được tin là báo lại qua Zalo ngay
+async function scanContacts(isManualScan) {
+  const maxLoops = isManualScan ? 3 : 1;
+  const waitMs = isManualScan ? 30000 : 4000;
 
-  for (let i = 0; i < 5; i++) {
-    const json = await fetchOneUpdate();
-    if (!json || !json.ok || !json.result) break;
+  console.log(`🔍 Đang mở cổng chờ tin nhắn Zalo (Tối đa ${maxLoops * (waitMs / 1000)} giây)...`);
+
+  for (let i = 0; i < maxLoops; i++) {
+    const json = await fetchOneUpdate(waitMs);
+    if (!json) continue;
+
+    state.lastZaloResponse = json;
+    if (!json.ok || !json.result) continue;
 
     const items = Array.isArray(json.result) ? json.result : [json.result];
-    if (items.length === 0) break;
+    if (items.length === 0) continue;
 
+    let caughtAny = false;
     for (const item of items) {
       const msg = item?.message || item;
       const chat = msg?.chat;
@@ -187,18 +162,26 @@ async function scanContacts() {
           name: displayName,
           chatId: String(chatId),
           type: chat?.chat_type || 'PRIVATE',
-          lastMessage: msg?.text || '(Tin nhắn hình ảnh/nhãn dán)',
+          lastMessage: msg?.text || '(Nhãn dán/Hình ảnh)',
           updatedAt: formatDateTimeVN(getVNDate())
         };
-        foundNew = true;
+        caughtAny = true;
         console.log(`🎯 Đã bắt được Chat ID: "${chatId}" | Tên: ${displayName}`);
+
+        // Tự động nhắn trả lời mã Chat ID ngay vào Zalo nếu đang ở chế độ quét ID
+        if (isManualScan) {
+          const replyMsg = `✅ Đã lấy mã thành công!\n👤 Tên: ${displayName}\n🔑 Mã Chat ID: ${chatId}`;
+          await sendZalo(String(chatId), replyMsg);
+        }
       }
     }
+
+    // Nếu đã bắt được tin nhắn thì thoát vòng chờ sớm để lưu file ngay
+    if (caughtAny) break;
   }
 
   state.lastScanTime = formatDateTimeVN(getVNDate());
   fs.writeFileSync(statePath, JSON.stringify(state, null, 2), 'utf8');
-  return foundNew;
 }
 
 async function run() {
@@ -207,12 +190,14 @@ async function run() {
     return;
   }
 
-  await scanContacts();
-
   if (MODE === 'scan_id') {
-    console.log("📋 Danh bạ hiện có trong state.json:", JSON.stringify(state.knownContacts, null, 2));
+    await scanContacts(true);
+    console.log("📋 Danh bạ hiện có:", JSON.stringify(state.knownContacts, null, 2));
     return;
   }
+
+  // Quét nhanh 4 giây ở các chế độ khác
+  await scanContacts(false);
 
   if (MODE === 'send_now') {
     const targetId = CONTACTS[TARGET_USER] || TARGET_USER;
