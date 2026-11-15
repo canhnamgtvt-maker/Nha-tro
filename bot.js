@@ -28,7 +28,7 @@ const TARGET_USER = (process.env.TARGET_USER || '').trim();
 const CUSTOM_MSG = (process.env.CUSTOM_MSG || '').trim();
 
 // =========================================================================
-// 1. DANH BẠ NGƯỜI NHẬN (Đặt tên gợi nhớ : "Mã Chat ID")
+// 1. DANH BẠ NGƯỜI NHẬN (Thay mã Chat ID của bạn bạn vào dòng dưới)
 // =========================================================================
 const CONTACTS = {
   "nguoi_rieng_1": "DIEN_CHAT_ID_VAO_DAY",
@@ -40,25 +40,37 @@ const CONTACTS = {
 // =========================================================================
 const TASKS = [
   {
+    id: "nhac_thu_tien_tro_ngay_10_15",
+    enabled: true,           // Đang BẬT tự động nhắc ngày 10 và 15 hàng tháng
+    to: "nguoi_rieng_1",     // Gửi cho người bạn ở danh bạ trên
+    type: "monthly",         // Chạy định kỳ hàng tháng
+    days: [10, 15],          // Chạy vào ngày 10 và ngày 15 hàng tháng
+    hour: 8,                 // Khung 8h00 sáng (giờ Việt Nam)
+    messages: [
+      `Thu tiền Nhà trọ đi nhé!`,
+      `Nhắc nhẹ: Đến ngày thu tiền phòng trọ định kỳ rồi, kiểm tra sổ sách và nhắc các phòng đóng tiền nhé!`,
+      `Ting ting! Đừng quên lịch thu tiền phòng trọ hôm nay nhé, rà soát xem còn phòng nào chưa đóng không nha!`
+    ]
+  },
+  {
     id: "chuc_buoi_sang",
-    enabled: true,
+    enabled: false,          // Đang TẮT (Đổi thành true nếu muốn bật)
     to: "nguoi_rieng_1",
     type: "daily",
     hour: 7,
     messages: [
-      `Chúc ngày mới tốt lành và nhiều niềm vui nhé!`,
-      `Sáng rồi, đừng quên ăn sáng đầy đủ trước khi làm việc nhé!`
+      `Chúc ngày mới tốt lành và nhiều niềm vui nhé!`
     ]
   },
   {
-    id: "nhac_tien_nha_hang_thang",
-    enabled: false,
-    to: "nguoi_rieng_1",
-    type: "monthly",
-    day: 10,
-    hour: 8,
+    id: "nhac_mung_1_va_ram",
+    enabled: false,          // Đang TẮT (Đổi thành true nếu muốn bật)
+    to: "ban_than",
+    type: "lunar",
+    lunarDays: [1, 15],
+    hour: 6,
     messages: [
-      `Hôm nay ngày 10 rồi, nhớ kiểm tra công việc định kỳ tháng này nhé!`
+      `Hôm nay là ngày tuần (Mùng 1 / Rằm Âm lịch) nhé!`
     ]
   }
 ];
@@ -97,7 +109,7 @@ function getLunarDay(date) {
 
 async function sendZalo(chatId, text) {
   if (!chatId || chatId.startsWith("DIEN_")) {
-    console.log("⚠️ Chưa điền Chat ID hợp lệ cho người nhận.");
+    console.log("⚠️ Chưa điền Chat ID hợp lệ vào mục CONTACTS trong file bot.js!");
     return false;
   }
   try {
@@ -132,7 +144,6 @@ async function fetchOneUpdate(timeoutMs) {
   }
 }
 
-// Mở cổng lắng nghe 90 giây khi ở chế độ scan_id, bắt được tin là báo lại qua Zalo ngay
 async function scanContacts(isManualScan) {
   const maxLoops = isManualScan ? 3 : 1;
   const waitMs = isManualScan ? 30000 : 4000;
@@ -168,15 +179,13 @@ async function scanContacts(isManualScan) {
         caughtAny = true;
         console.log(`🎯 Đã bắt được Chat ID: "${chatId}" | Tên: ${displayName}`);
 
-        // Tự động nhắn trả lời mã Chat ID ngay vào Zalo nếu đang ở chế độ quét ID
         if (isManualScan) {
-          const replyMsg = `✅ Đã lấy mã thành công!\n👤 Tên: ${displayName}\n🔑 Mã Chat ID: ${chatId}`;
+          const replyMsg = `✅ Đã kết nối Bot thành công!\n👤 Tên: ${displayName}\n🔑 Mã Chat ID: ${chatId}`;
           await sendZalo(String(chatId), replyMsg);
         }
       }
     }
 
-    // Nếu đã bắt được tin nhắn thì thoát vòng chờ sớm để lưu file ngay
     if (caughtAny) break;
   }
 
@@ -196,7 +205,6 @@ async function run() {
     return;
   }
 
-  // Quét nhanh 4 giây ở các chế độ khác
   await scanContacts(false);
 
   if (MODE === 'send_now') {
@@ -228,7 +236,10 @@ async function run() {
 
     let isMatch = false;
     if (task.type === 'daily') isMatch = true;
-    else if (task.type === 'monthly' && task.day === curDay) isMatch = true;
+    else if (task.type === 'monthly') {
+      if (Array.isArray(task.days) && task.days.includes(curDay)) isMatch = true;
+      else if (task.day === curDay) isMatch = true;
+    }
     else if (task.type === 'weekly' && Array.isArray(task.daysOfWeek) && task.daysOfWeek.includes(curDow)) isMatch = true;
     else if (task.type === 'lunar' && Array.isArray(task.lunarDays) && task.lunarDays.includes(curLunarDay)) isMatch = true;
     else if (task.type === 'yearly' && task.dateMonth === dayMonthStr) isMatch = true;
