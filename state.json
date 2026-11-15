@@ -1,34 +1,14 @@
 {
-  "lastScanTime": "16:28 - 15/11/2026",
-  "lastZaloResponse": {
-    "ok": true,
-    "result": {
-      "message": {
-        "chat": {
-          "id": "dd0c2dc7148bfdd5a49a",
-          "chat_type": "PRIVATE"
-        },
-        "text": "Alo",
-        "message_id": "72c9f6cb088358da0195",
-        "date": 1794734442535,
-        "message_type": "CHAT_TEXT",
-        "from": {
-          "id": "dd0c2dc7148bfdd5a49a",
-          "is_bot": false,
-          "display_name": "Vananh"
-        }
-      },
-      "event_name": "message.text.received"
-    },
-    "error_code": 0
-  },
+  "lastScanTime": "16:32 - 15/11/2026",
+  "defaultChatId": "dd0c2dc7148bfdd5a49a",
+  "defaultUserName": "Vananh",
   "knownContacts": {
     "dd0c2dc7148bfdd5a49a": {
       "name": "Vananh",
       "chatId": "dd0c2dc7148bfdd5a49a",
       "type": "PRIVATE",
       "lastMessage": "Alo",
-      "updatedAt": "16:20 - 15/11/2026"
+      "updatedAt": "16:32 - 15/11/2026"
     }
   },
   "sentLocks": {}
